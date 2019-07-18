@@ -13,14 +13,14 @@
 #  limitations under the License.
 import socket
 import time
+import numpy as np
 from multiprocessing import Event, Pool
 from multiprocessing.pool import AsyncResult
 from typing import Callable, Union
-
 from aiologger import Logger
 
 
-class DelayProxy:
+class BaseDelayProxy:
     SHUTDOWN_TIMEOUT = 3
 
     def __init__(self,
@@ -28,7 +28,7 @@ class DelayProxy:
                  listen_port: int = 5000,
                  connect_host: str = '0.0.0.0',
                  connect_port: int = 5001,
-                 chunk_size: int = 496,
+                 chunk_size: int = 4096,
                  delay_dist: Callable[[], float] = lambda: 0):
         super().__init__()
         self.listen_addr = (listen_host, listen_port)
@@ -70,7 +70,7 @@ class DelayProxy:
         self.__setup()
         self.ppool = Pool(2)
         self.result = self.ppool.apply_async(
-            DelayProxy.__relay,
+            BaseDelayProxy.__relay,
             (self.conn_A, self.conn_B),
             {'chunk_size'    : self.chunk_size,
              'shutdown_event': self.shutdown_signal,
@@ -94,3 +94,38 @@ class DelayProxy:
                 self.ppool.terminate()
 
             self.ppool.join()
+
+
+class NormalDelayProxy(BaseDelayProxy):
+    def __init__(self,
+                 mean,
+                 std_dev,
+                 listen_host: str = '0.0.0.0',
+                 listen_port: int = 5000,
+                 connect_host: str = '0.0.0.0',
+                 connect_port: int = 5001,
+                 chunk_size: int = 4096):
+        super().__init__(
+            listen_host=listen_host,
+            listen_port=listen_port,
+            connect_host=connect_host,
+            connect_port=connect_port,
+            chunk_size=chunk_size,
+            delay_dist=lambda: np.random.normal(mean, std_dev))
+
+
+class ExponentialDelayProxy(BaseDelayProxy):
+    def __init__(self,
+                 scale,
+                 listen_host: str = '0.0.0.0',
+                 listen_port: int = 5000,
+                 connect_host: str = '0.0.0.0',
+                 connect_port: int = 5001,
+                 chunk_size: int = 4096):
+        super().__init__(
+            listen_host=listen_host,
+            listen_port=listen_port,
+            connect_host=connect_host,
+            connect_port=connect_port,
+            chunk_size=chunk_size,
+            delay_dist=lambda: np.random.exponential(scale=scale))

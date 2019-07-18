@@ -1,2 +1,3 @@
 click
 aiologger
+numpy
