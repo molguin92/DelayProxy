@@ -48,15 +48,27 @@ class INetAddress(click.ParamType):
         return ip, port
 
 
+def print_help(ctx, param, value):
+    click.echo(ctx.get_help())
+    ctx.exit()
+
+
 @click.command()
+@click.option('-h', '--help', is_flag=True,
+              callback=print_help,
+              expose_value=True,
+              is_eager=True,
+              help='Print this message and exit.')
 @click.option('-v', '--verbose',
               count=True, type=int, default=0,
               help='Logging verbosity.')
 @click.option('-p', '--proxy',
               required=True,
               type=click.Tuple([INetAddress(INetAddress.TYPE.FROM),
-                                INetAddress(INetAddress.TYPE.TO)]),
-              nargs=2,
+                                INetAddress(INetAddress.TYPE.TO),
+                                click.Choice(['ZERO', 'NORMAL',
+                                              'EXPONENTIAL'])]),
+              nargs=3,
               multiple=True,
               help='\
 Hosts to relay packets between, can be provided multiple times to specify \
