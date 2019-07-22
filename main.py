@@ -21,7 +21,9 @@ from typing import List, Optional
 
 import click
 
-from proxy import BaseDelayProxy, ExponentialDelayProxy
+from distributions import ConstantDistribution, PseudoNormalDistribution, \
+    ExponentialDistribution
+from proxy import DelayProxy
 
 
 class INetAddress(click.ParamType):
@@ -53,55 +55,83 @@ def print_help(ctx, param, value):
     ctx.exit()
 
 
-@click.command()
-@click.option('-h', '--help', is_flag=True,
-              callback=print_help,
-              expose_value=True,
-              is_eager=True,
-              help='Print this message and exit.')
+@click.group()
 @click.option('-v', '--verbose',
               count=True, type=int, default=0,
               help='Logging verbosity.')
-@click.option('-p', '--proxy',
-              required=True,
-              type=click.Tuple([INetAddress(INetAddress.TYPE.FROM),
-                                INetAddress(INetAddress.TYPE.TO),
-                                click.Choice(['ZERO', 'NORMAL',
-                                              'EXPONENTIAL'])]),
-              nargs=3,
-              multiple=True,
-              help='\
-Hosts to relay packets between, can be provided multiple times to specify \
-multiple relays. The application will bind and listen for an incoming \
-connection on BIND_ADDRESS:BIND_PORT and relay all data coming from it to \
-HOST_ADDRESS:HOST_PORT.'
-              )
-def main(verbose, proxy):
-    proxies: List[BaseDelayProxy] = list()
+def cli(verbose):
+    # TODO: logging
+    pass
 
+
+@cli.group(help='Start a single proxy from the CLI.')
+@click.option('-c', '--chunk_size', type=int, default=4096, required=False,
+              show_default=True,
+              help='Read/write chunk size for the TCP proxy in bytes.')
+@click.argument('bind_addr', type=INetAddress(INetAddress.TYPE.FROM))
+@click.argument('connect_addr', type=INetAddress(INetAddress.TYPE.TO))
+@click.pass_context
+def proxy(ctx, chunk_size, bind_addr, connect_addr):
+    print(f'Starting relay: {bind_addr} -> {connect_addr}')
+
+    lhost, lport = bind_addr
+    chost, cport = connect_addr
+    ctx.obj = DelayProxy(
+        listen_host=lhost,
+        listen_port=lport,
+        connect_host=chost,
+        connect_port=cport,
+        chunk_size=chunk_size
+    )
+
+
+@proxy.command(help='Proxy with a constant delay between chunks of data.')
+@click.option('-c', '--constant', type=float, default=0.0, required=False,
+              show_default=True,
+              help='Constant delay, in seconds, to apply '
+                   'between chunks of data.')
+@click.pass_context
+def constant_delay(ctx, constant):
+    ctx.ensure_object(DelayProxy)
+    ctx.obj.set_distribution(ConstantDistribution(constant=constant))
+    single_run(ctx.obj)
+
+@proxy.command(help='Proxy with normally distributed delays '
+                    'between chunks of data.')
+@click.argument('mean', type=float)
+@click.argument('std_dev', type=float)
+@click.pass_context
+def gaussian_delay(ctx, mean, std_dev):
+    ctx.ensure_object(DelayProxy)
+    ctx.obj.set_distribution(PseudoNormalDistribution(mean, std_dev))
+    single_run(ctx.obj)
+
+
+@proxy.command(help='Proxy with exponentially distributed delays '
+                    'between chunks of data.')
+@click.argument('scale', type=float)
+@click.pass_context
+def exponential_delay(ctx, scale):
+    ctx.ensure_object(DelayProxy)
+    ctx.obj.set_distribution(ExponentialDistribution(scale))
+    single_run(ctx.obj)
+
+
+def single_run(proxy: DelayProxy):
     def __sig_handler(*args, **kwargs):
-        for p in proxies:
-            p.stop()
+        proxy.stop()
         exit(0)
 
     signal.signal(signal.SIGINT, __sig_handler)
-
-    for addr_a, addr_b in proxy:
-        print(f'Setting up relay from {addr_a} to {addr_b}...')
-        listen_host, listen_port = addr_a
-        connect_host, connect_port = addr_b
-        proxies.append(ExponentialDelayProxy(
-            scale=0.1,
-            listen_host=listen_host,
-            listen_port=listen_port,
-            connect_host=connect_host,
-            connect_port=connect_port))
-
-    for p in proxies:
-        p.start()
+    proxy.start()
 
     Event().wait()  # wait forever
 
 
+@cli.command()
+def config_file():
+    pass
+
+
 if __name__ == '__main__':
-    main()
+    cli()

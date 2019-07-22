@@ -74,6 +74,10 @@ class DelayProxy:
         self.conn_B: Optional[socket.SocketType] = None
         self.barrier = barrier
 
+    def set_distribution(self, distribution: Distribution):
+        if not self.shutdown_signal.is_set():
+            self.delay_dist = distribution
+
     def __setup(self) -> Union[socket.SocketType, socket.SocketType]:
         l_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         l_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
