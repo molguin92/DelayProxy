@@ -13,15 +13,11 @@
 #  limitations under the License.
 import socket
 import time
-import numpy as np
-from multiprocessing import Event, Pool, Barrier
+from multiprocessing import Barrier, Event, Pool
 from multiprocessing.pool import AsyncResult
-from typing import Callable, Union, Optional
-from functools import partial
+from typing import Callable, Optional, Union
 
-
-def constant_0():
-    return 0
+from distributions import Distribution, ConstantDistribution
 
 
 def pool_init(shutdown_signal: Event):
@@ -33,12 +29,13 @@ def relay(conn_A: socket.SocketType,
           conn_B: socket.SocketType,
           barrier: Barrier = None,
           chunk_size: int = 4096,
-          delay_dist: Callable[[], float] = constant_0) -> None:
+          delay_dist: Distribution = ConstantDistribution(constant=0.0)) \
+        -> None:
     try:
         while not shutdown_event.is_set():
             # read from A, wait X time, send to B
             data = conn_A.recv(chunk_size)
-            time.sleep(max(delay_dist(), 0.0))
+            time.sleep(delay_dist.sample())
             conn_B.sendall(data)
     except socket.error:
         # todo: log error
@@ -50,7 +47,7 @@ def relay(conn_A: socket.SocketType,
         barrier.wait()
 
 
-class BaseDelayProxy:
+class DelayProxy:
     SHUTDOWN_TIMEOUT = 3
 
     __relay = staticmethod(relay)
@@ -62,7 +59,7 @@ class BaseDelayProxy:
                  connect_port: int = 5001,
                  chunk_size: int = 4096,
                  barrier: Barrier = None,
-                 delay_dist: Callable[[], float] = constant_0):
+                 delay_dist: Distribution = ConstantDistribution(constant=0.0)):
         super().__init__()
         self.listen_addr = (listen_host, listen_port)
         self.connect_addr = (connect_host, connect_port)
@@ -94,12 +91,12 @@ class BaseDelayProxy:
                           initializer=pool_init,
                           initargs=(self.shutdown_signal,))
         self.result_AtoB = self.ppool.apply_async(
-            BaseDelayProxy.__relay,
+            DelayProxy.__relay,
             (self.conn_A, self.conn_B),
             {'chunk_size': self.chunk_size,
              'delay_dist': self.delay_dist})
         self.result_BtoA = self.ppool.apply_async(
-            BaseDelayProxy.__relay,
+            DelayProxy.__relay,
             (self.conn_B, self.conn_A),
             {'chunk_size': self.chunk_size,
              'delay_dist': self.delay_dist})
@@ -124,38 +121,3 @@ class BaseDelayProxy:
         if self.ppool:
             self.ppool.terminate()
             self.ppool.join()
-
-
-class NormalDelayProxy(BaseDelayProxy):
-    def __init__(self,
-                 mean,
-                 std_dev,
-                 listen_host: str = '0.0.0.0',
-                 listen_port: int = 5000,
-                 connect_host: str = '0.0.0.0',
-                 connect_port: int = 5001,
-                 chunk_size: int = 4096):
-        super().__init__(
-            listen_host=listen_host,
-            listen_port=listen_port,
-            connect_host=connect_host,
-            connect_port=connect_port,
-            chunk_size=chunk_size,
-            delay_dist=partial(np.random.normal, loc=mean, scale=std_dev))
-
-
-class ExponentialDelayProxy(BaseDelayProxy):
-    def __init__(self,
-                 scale,
-                 listen_host: str = '0.0.0.0',
-                 listen_port: int = 5000,
-                 connect_host: str = '0.0.0.0',
-                 connect_port: int = 5001,
-                 chunk_size: int = 4096):
-        super().__init__(
-            listen_host=listen_host,
-            listen_port=listen_port,
-            connect_host=connect_host,
-            connect_port=connect_port,
-            chunk_size=chunk_size,
-            delay_dist=partial(np.random.exponential, scale=scale))
