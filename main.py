@@ -20,10 +20,19 @@ from multiprocessing import Event
 from typing import List, Optional
 
 import click
+import toml
 
 from distributions import ConstantDistribution, PseudoNormalDistribution, \
     ExponentialDistribution
 from proxy import DelayProxy
+
+
+class TOMLFile(click.File):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def convert(self, value, param, ctx):
+        return toml.load(super().convert(value, param, ctx))
 
 
 class INetAddress(click.ParamType):
@@ -96,6 +105,7 @@ def constant_delay(ctx, constant):
     ctx.obj.set_distribution(ConstantDistribution(constant=constant))
     single_run(ctx.obj)
 
+
 @proxy.command(help='Proxy with normally distributed delays '
                     'between chunks of data.')
 @click.argument('mean', type=float)
@@ -129,7 +139,8 @@ def single_run(proxy: DelayProxy):
 
 
 @cli.command()
-def config_file():
+@click.argument('config', type=TOMLFile())
+def from_file(config):
     pass
 
 
