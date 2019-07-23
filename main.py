@@ -17,22 +17,41 @@ import enum
 import ipaddress
 import signal
 from multiprocessing import Event
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 
 import click
 import toml
 
-from distributions import ConstantDistribution, PseudoNormalDistribution, \
-    ExponentialDistribution
+from distributions import ConstantDistribution, GaussianDistribution, \
+    ExponentialDistribution, Distribution
 from proxy import DelayProxy
 
+avail_distributions = {cls.__name__.upper(): cls for cls in
+                       Distribution.__subclasses__()}
 
-class TOMLFile(click.File):
+
+def parse_IP_address(address: str) -> Tuple[str, int]:
+    try:
+        [ip, port] = address.split(':')
+        ipaddress.ip_address(ip)
+        port = int(port)
+        assert port <= 65535
+        return ip, port
+    except:
+        raise RuntimeError(f'Could not parse {address} into a valid IP address')
+
+
+class TOMLConfig(click.File):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def convert(self, value, param, ctx):
-        return toml.load(super().convert(value, param, ctx))
+        try:
+            return toml.load(super().convert(value, param, ctx))
+        except Exception as e:
+            self.fail(f'{value} is not a valid TOML configuration file. '
+                      f'Exception when parsing: {e}',
+                      param, ctx)
 
 
 class INetAddress(click.ParamType):
@@ -49,13 +68,10 @@ class INetAddress(click.ParamType):
 
     def convert(self, value, param, ctx):
         try:
-            [ip, port] = value.split(':')
-            ipaddress.ip_address(ip)
-            port = int(port)
-            assert port < 65535
-        except Exception:
-            self.fail(f'{value} is not a valid IPv4 or IPv6 address.',
-                      param, ctx)
+            ip, port = parse_IP_address(value)
+        except RuntimeError as e:
+            self.fail(str(e), param, ctx)
+
         return ip, port
 
 
@@ -113,7 +129,7 @@ def constant_delay(ctx, constant):
 @click.pass_context
 def gaussian_delay(ctx, mean, std_dev):
     ctx.ensure_object(DelayProxy)
-    ctx.obj.set_distribution(PseudoNormalDistribution(mean, std_dev))
+    ctx.obj.set_distribution(GaussianDistribution(mean, std_dev))
     single_run(ctx.obj)
 
 
@@ -139,9 +155,37 @@ def single_run(proxy: DelayProxy):
 
 
 @cli.command()
-@click.argument('config', type=TOMLFile())
-def from_file(config):
-    pass
+@click.argument('config', type=TOMLConfig())
+def from_file(config: Dict):
+    proxies: List[DelayProxy] = list()
+    for p_config in config['proxies']:
+        baddr, bport = parse_IP_address(p_config['bind_addr'])
+        caddr, cport = parse_IP_address(p_config['connect_addr'])
+        chunk_size = p_config.get('chunk_size', 4096)  # todo: defaults
+
+        dist_name = p_config['distribution']['name'].upper()
+        dist_params = p_config['distribution']['params']
+
+        dist = avail_distributions[dist_name](**dist_params)
+
+        proxies.append(DelayProxy(
+            listen_host=baddr, listen_port=bport,
+            connect_host=caddr, connect_port=cport,
+            chunk_size=chunk_size,
+            delay_dist=dist
+        ))
+
+    def __sig_handler(*args, **kwargs):
+        for p in proxies:
+            p.stop()
+        exit(0)
+
+    signal.signal(signal.SIGINT, __sig_handler)
+
+    for p in proxies:
+        p.start()
+
+    Event().wait()  # wait forever
 
 
 if __name__ == '__main__':

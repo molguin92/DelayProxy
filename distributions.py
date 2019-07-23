@@ -34,7 +34,7 @@ class ConstantDistribution(Distribution):
         return self.constant
 
 
-class PseudoNormalDistribution(Distribution):
+class GaussianDistribution(Distribution):
     def __init__(self, mean: float, std_dev: float,
                  strictly_positive: bool = False):
         super().__init__()

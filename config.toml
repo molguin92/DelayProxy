@@ -1,0 +1,19 @@
+name="Proxy config file v0.01"
+
+[[proxies]]
+    bind_addr = "0.0.0.0:5000"
+    connect_addr = "0.0.0.0:5001"
+    chunk_size = 512
+
+    [proxies.distribution]
+        name = "ConstantDistribution"
+        params = { constant = 0.0 }
+
+[[proxies]]
+    bind_addr = "0.0.0.0:5002"
+    connect_addr = "0.0.0.0:5003"
+    chunk_size = 512
+
+    [proxies.distribution]
+        name = "ExponentialDistribution"
+        params = { scale = 0.1 }
