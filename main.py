@@ -18,6 +18,8 @@ import ipaddress
 import signal
 from multiprocessing import Event
 from typing import List, Optional, Dict, Tuple
+from inspect import signature
+from functools import partial
 
 import click
 import toml
@@ -75,11 +77,6 @@ class INetAddress(click.ParamType):
         return ip, port
 
 
-def print_help(ctx, param, value):
-    click.echo(ctx.get_help())
-    ctx.exit()
-
-
 @click.group()
 @click.option('-v', '--verbose',
               count=True, type=int, default=0,
@@ -110,48 +107,36 @@ def proxy(ctx, chunk_size, bind_addr, connect_addr):
     )
 
 
-@proxy.command(help='Proxy with a constant delay between chunks of data.')
-@click.option('-c', '--constant', type=float, default=0.0, required=False,
-              show_default=True,
-              help='Constant delay, in seconds, to apply '
-                   'between chunks of data.')
 @click.pass_context
-def constant_delay(ctx, constant):
+def single_run_proxy_callback(ctx, dist_class, *args, **kwargs):
     ctx.ensure_object(DelayProxy)
-    ctx.obj.set_distribution(ConstantDistribution(constant=constant))
-    single_run(ctx.obj)
+    relay = ctx.obj
+    relay.set_distribution(dist_class(*args, **kwargs))
 
-
-@proxy.command(help='Proxy with normally distributed delays '
-                    'between chunks of data.')
-@click.argument('mean', type=float)
-@click.argument('std_dev', type=float)
-@click.pass_context
-def gaussian_delay(ctx, mean, std_dev):
-    ctx.ensure_object(DelayProxy)
-    ctx.obj.set_distribution(GaussianDistribution(mean, std_dev))
-    single_run(ctx.obj)
-
-
-@proxy.command(help='Proxy with exponentially distributed delays '
-                    'between chunks of data.')
-@click.argument('scale', type=float)
-@click.pass_context
-def exponential_delay(ctx, scale):
-    ctx.ensure_object(DelayProxy)
-    ctx.obj.set_distribution(ExponentialDistribution(scale))
-    single_run(ctx.obj)
-
-
-def single_run(proxy: DelayProxy):
     def __sig_handler(*args, **kwargs):
-        proxy.stop()
+        relay.stop()
         exit(0)
 
     signal.signal(signal.SIGINT, __sig_handler)
-    proxy.start()
+    relay.start()
 
     Event().wait()  # wait forever
+
+
+for dist_name, dist in avail_distributions.items():
+    sig = signature(dist)
+    params = dict(sig.parameters)
+
+    args = [
+        click.Argument(param_decls=(name,), nargs=1, type=param.annotation)
+        for name, param in params.items()
+    ]
+
+    cmd = click.Command(dist_name.lower(),
+                        callback=partial(single_run_proxy_callback,
+                                         dist_class=dist),
+                        params=args)
+    proxy.add_command(cmd)
 
 
 @cli.command()
