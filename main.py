@@ -15,6 +15,7 @@
 
 import enum
 import ipaddress
+import logging
 import signal
 from functools import partial
 from inspect import Parameter, signature
@@ -22,6 +23,7 @@ from multiprocessing import Event
 from typing import Dict, List, Optional, Tuple
 
 import click
+import logzero
 import toml
 
 from distributions import Distribution
@@ -81,8 +83,14 @@ class INetAddress(click.ParamType):
               count=True, type=int, default=0,
               help='Logging verbosity.')
 def cli(verbose):
-    # TODO: logging
-    pass
+    if verbose == 1:
+        logzero.loglevel(logging.WARNING)
+    elif verbose == 2:
+        logzero.loglevel(logging.INFO)
+    elif verbose >= 3:
+        logzero.loglevel(logging.DEBUG)
+    else:
+        logzero.loglevel(logging.ERROR)
 
 
 @cli.group(help='Start a single proxy from the CLI.')
@@ -93,8 +101,6 @@ def cli(verbose):
 @click.argument('connect_addr', type=INetAddress(INetAddress.TYPE.TO))
 @click.pass_context
 def proxy(ctx, chunk_size, bind_addr, connect_addr):
-    print(f'Starting relay: {bind_addr} -> {connect_addr}')
-
     lhost, lport = bind_addr
     chost, cport = connect_addr
     ctx.obj = DelayProxy(
