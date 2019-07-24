@@ -16,16 +16,15 @@
 import enum
 import ipaddress
 import signal
-from multiprocessing import Event
-from typing import List, Optional, Dict, Tuple
-from inspect import signature
 from functools import partial
+from inspect import Parameter, signature
+from multiprocessing import Event
+from typing import Dict, List, Optional, Tuple
 
 import click
 import toml
 
-from distributions import ConstantDistribution, GaussianDistribution, \
-    ExponentialDistribution, Distribution
+from distributions import Distribution
 from proxy import DelayProxy
 
 avail_distributions = {cls.__name__.upper(): cls for cls in
@@ -123,12 +122,20 @@ def single_run_proxy_callback(ctx, dist_class, *args, **kwargs):
     Event().wait()  # wait forever
 
 
+# dynamically add distributions as commands
 for dist_name, dist in avail_distributions.items():
     sig = signature(dist)
     params = dict(sig.parameters)
 
     args = [
-        click.Argument(param_decls=(name,), nargs=1, type=param.annotation)
+        click.Option(param_decls=(f'--{name}',),
+                     required=(param.default == Parameter.empty),
+                     default=(param.default
+                              if param.default != Parameter.empty
+                              else None),
+                     show_default=True,
+                     nargs=1,
+                     type=param.annotation)
         for name, param in params.items()
     ]
 
