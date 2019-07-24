@@ -13,11 +13,11 @@
 #  limitations under the License.
 import socket
 import time
-from multiprocessing import Barrier, Event, Pool
+from multiprocessing import Event, Pool
 from multiprocessing.pool import AsyncResult
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
-from distributions import Distribution, ConstantDistribution
+from distributions import Distribution
 
 
 def pool_init(shutdown_signal: Event):
@@ -27,10 +27,8 @@ def pool_init(shutdown_signal: Event):
 
 def relay(conn_A: socket.SocketType,
           conn_B: socket.SocketType,
-          barrier: Barrier = None,
-          chunk_size: int = 4096,
-          delay_dist: Distribution = ConstantDistribution(constant=0.0)) \
-        -> None:
+          delay_dist: Distribution,
+          chunk_size: int = 4096) -> None:
     try:
         while not shutdown_event.is_set():
             # read from A, wait X time, send to B
@@ -43,9 +41,6 @@ def relay(conn_A: socket.SocketType,
     except Exception as e:
         print(e)
 
-    if barrier:
-        barrier.wait()
-
 
 class DelayProxy:
     SHUTDOWN_TIMEOUT = 3
@@ -53,26 +48,24 @@ class DelayProxy:
     __relay = staticmethod(relay)
 
     def __init__(self,
-                 listen_host: str = '0.0.0.0',
-                 listen_port: int = 5000,
-                 connect_host: str = '0.0.0.0',
-                 connect_port: int = 5001,
-                 chunk_size: int = 4096,
-                 barrier: Barrier = None,
-                 delay_dist: Distribution = ConstantDistribution(constant=0.0)):
+                 listen_host: str,
+                 listen_port: int,
+                 connect_host: str,
+                 connect_port: int,
+                 delay_dist: Optional[Distribution] = None,
+                 chunk_size: int = 4096):
         super().__init__()
         self.listen_addr = (listen_host, listen_port)
         self.connect_addr = (connect_host, connect_port)
         self.shutdown_signal = Event()
-        self.delay_dist = delay_dist
         self.chunk_size = chunk_size
 
+        self.delay_dist = delay_dist
         self.result_AtoB: Optional[AsyncResult] = None
         self.result_BtoA: Optional[AsyncResult] = None
         self.ppool: Optional[Pool] = None
         self.conn_A: Optional[socket.SocketType] = None
         self.conn_B: Optional[socket.SocketType] = None
-        self.barrier = barrier
 
     def set_distribution(self, distribution: Distribution):
         if not self.shutdown_signal.is_set():
@@ -90,6 +83,9 @@ class DelayProxy:
         # self.log.info(f'Connected to {self.connect_addr}')
 
     def start(self) -> None:
+        if self.delay_dist is None:
+            raise RuntimeError('Delay distribution for proxy is unset!')
+
         self.__setup()
         self.ppool = Pool(2,
                           initializer=pool_init,
@@ -125,3 +121,5 @@ class DelayProxy:
         if self.ppool:
             self.ppool.terminate()
             self.ppool.join()
+
+        self.shutdown_signal.clear()
