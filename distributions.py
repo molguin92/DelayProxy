@@ -36,7 +36,7 @@ class ConstantDistribution(Distribution):
 
 class GaussianDistribution(Distribution):
     def __init__(self, mean: float, std_dev: float,
-                 strictly_positive: bool = False):
+                 strictly_positive: bool = True):
         super().__init__()
         self.dist = partial(np.random.normal, loc=mean, scale=std_dev)
         self.positive = strictly_positive
