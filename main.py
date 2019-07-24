@@ -84,13 +84,13 @@ class INetAddress(click.ParamType):
               help='Logging verbosity.')
 def cli(verbose):
     if verbose == 1:
-        logzero.loglevel(logging.WARNING)
+        logzero.setup_default_logger(level=logging.WARNING)
     elif verbose == 2:
-        logzero.loglevel(logging.INFO)
+        logzero.setup_default_logger(level=logging.INFO)
     elif verbose >= 3:
-        logzero.loglevel(logging.DEBUG)
+        logzero.setup_default_logger(level=logging.DEBUG)
     else:
-        logzero.loglevel(logging.ERROR)
+        logzero.setup_default_logger(level=logging.ERROR)
 
 
 @cli.group(help='Start a single proxy from the CLI.')

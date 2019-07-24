@@ -17,6 +17,8 @@ from multiprocessing import Event, Pool
 from multiprocessing.pool import AsyncResult
 from typing import Optional, Union
 
+from logzero import logger
+
 from distributions import Distribution
 
 
@@ -29,17 +31,18 @@ def relay(conn_A: socket.SocketType,
           conn_B: socket.SocketType,
           delay_dist: Distribution,
           chunk_size: int = 4096) -> None:
+    logger.debug('Relaying!')
     try:
         while not shutdown_event.is_set():
             # read from A, wait X time, send to B
             data = conn_A.recv(chunk_size)
             time.sleep(delay_dist.sample())
             conn_B.sendall(data)
-    except socket.error:
-        # todo: log error
+    except socket.error as e:
+        logger.warning(e)
         pass
     except Exception as e:
-        print(e)
+        logger.exception(e)
 
 
 class DelayProxy:
@@ -55,6 +58,14 @@ class DelayProxy:
                  delay_dist: Optional[Distribution] = None,
                  chunk_size: int = 4096):
         super().__init__()
+
+        logger.info(f'Setting up relay from '
+                    f'{listen_host}:{listen_port} to '
+                    f'{connect_host}:{connect_port}')
+
+        if delay_dist:
+            logger.info(f'Setting delay distribution to: {delay_dist}')
+
         self.listen_addr = (listen_host, listen_port)
         self.connect_addr = (connect_host, connect_port)
         self.shutdown_signal = Event()
@@ -69,24 +80,34 @@ class DelayProxy:
 
     def set_distribution(self, distribution: Distribution):
         if not self.shutdown_signal.is_set():
+            logger.info(f'Setting delay distribution to: {distribution}')
             self.delay_dist = distribution
 
-    def __setup(self) -> Union[socket.SocketType, socket.SocketType]:
+    def __setup(self) -> None:
         l_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         l_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        logger.info('Listening on {}:{}'.format(*self.listen_addr))
         l_sock.bind(self.listen_addr)
         l_sock.listen(0)
         self.conn_A, addr_A = l_sock.accept()
+        logger.info('Got connection from {}:{}'.format(*addr_A))
+
         # self.log.info(f'Accepted connection from {addr_A}')
 
+        logger.info('Connecting to {}:{}...'.format(*self.connect_addr))
         self.conn_B = socket.create_connection(self.connect_addr)
+        logger.info('Connected. Ready to relay from '
+                    '{}:{} to {}:{}'.format(*addr_A, *self.connect_addr))
         # self.log.info(f'Connected to {self.connect_addr}')
 
     def start(self) -> None:
+        logger.info('Initializing relay.')
         if self.delay_dist is None:
             raise RuntimeError('Delay distribution for proxy is unset!')
 
         self.__setup()
+        logger.debug('Setting up process pool for full-duplex relaying.')
         self.ppool = Pool(2,
                           initializer=pool_init,
                           initargs=(self.shutdown_signal,))
@@ -103,23 +124,32 @@ class DelayProxy:
         self.ppool.close()
 
     def stop(self):
+        logger.warning('Shutting down relay!')
         self.shutdown_signal.set()
         try:
             if self.conn_A:
+                logger.debug('Shutting down connection A...')
                 self.conn_A.shutdown(socket.SHUT_RDWR)
                 self.conn_A.close()
+                logger.debug('Connection A shut down.')
         except OSError:
+            logger.warning('Error shutting down incoming side!')
             pass
 
         try:
             if self.conn_B:
+                logger.debug('Shutting down connection B...')
                 self.conn_B.shutdown(socket.SHUT_RDWR)
                 self.conn_B.close()
+                logger.debug('Connection B shut down.')
         except OSError:
+            logger.warning('Error shutting down outgoing side!')
             pass
 
         if self.ppool:
+            logger.debug('Terminating process pool...')
             self.ppool.terminate()
             self.ppool.join()
+            logger.debug('Process pool terminated.')
 
         self.shutdown_signal.clear()
