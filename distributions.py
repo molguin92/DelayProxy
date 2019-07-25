@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import numpy as np
 from functools import partial
+
+import numpy as np
 
 
 class Distribution:
@@ -57,13 +58,13 @@ class GaussianDistribution(Distribution):
 
     def __repr__(self):
         return f'GaussianDistribution(' \
-            f'mean={self.mean}, ' \
-            f'std_dev={self.std_dev}, ' \
-            f'strictly_positive={self.positive})'
+               f'mean={self.mean}, ' \
+               f'std_dev={self.std_dev}, ' \
+               f'strictly_positive={self.positive})'
 
     def __str__(self):
-        return f'Gaussian distribution ' \
-            f'(mean: {self.mean}, standard deviation: {self.std_dev})'
+        return f'Normal distribution ' \
+               f'(mean: {self.mean}, standard deviation: {self.std_dev})'
 
 
 class ExponentialDistribution(Distribution):
@@ -80,3 +81,22 @@ class ExponentialDistribution(Distribution):
 
     def __str__(self):
         return f'Exponential distribution (scale: {self.scale})'
+
+
+class LogNormalDistribution(Distribution):
+    def __init__(self, mean: float, std_dev: float):
+        super().__init__()
+        self.mean = mean
+        self.std_dev = std_dev
+        self.dist = partial(np.random.lognormal, mean=mean, sigma=std_dev)
+
+    def sample(self) -> float:
+        return self.dist()
+
+    def __repr__(self):
+        return f'LogNormalDistribution' \
+               f'(mean={self.mean}, std_dev={self.std_dev})'
+
+    def __str__(self):
+        return f'Log-normal distribution ' \
+               f'(mean: {self.mean}, standard deviation: {self.std_dev})'
