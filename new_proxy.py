@@ -14,6 +14,9 @@
 
 import multiprocessing
 import socket
+import time
+
+from logzero import logger
 
 from distributions import Distribution
 
@@ -24,13 +27,33 @@ class SimplexRelay(multiprocessing.Process):
     def __init__(self,
                  conn_a: socket.SocketType,
                  conn_b: socket.SocketType,
-                 delay_dist: Distribution):
+                 delay_dist: Distribution,
+                 chunk_size: int = 512):
         super().__init__(daemon=True)
         self.conn_a = conn_a
         self.conn_b = conn_b
         self.delay_dist = delay_dist
+        self.chunk_size = chunk_size
 
         self.shutdown_signal = multiprocessing.Event()
         self.shutdown_signal.clear()
 
+    def run(self) -> None:
+        from_addr = self.conn_a.getpeername()
+        to_addr = self.conn_b.getpeername()
+        logger.info('Relaying data from '
+                    '{}:{} to {}:{}'.format(*from_addr, *to_addr))
+        while not self.shutdown_signal.is_set():
+            try:
+                data = self.conn_a.recv(self.chunk_size)
+                time.sleep(self.delay_dist.sample())
+                self.conn_b.sendall(data)
+            except socket.error as e:
+                logger.warning(e)
+                break
+            except Exception as e:
+                logger.exception(e)
+                break
 
+    def stop(self) -> None:
+        self.shutdown_signal.set()
