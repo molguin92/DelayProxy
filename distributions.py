@@ -100,3 +100,19 @@ class LogNormalDistribution(Distribution):
     def __str__(self):
         return f'Log-normal distribution ' \
                f'(mean: {self.mean}, standard deviation: {self.std_dev})'
+
+
+class PoissonDistribution(Distribution):
+    def __init__(self, mean: float):
+        super().__init__()
+        self.mean = mean
+        self.dist = partial(np.random.poisson, lam=mean)
+
+    def sample(self) -> float:
+        return self.dist()
+
+    def __repr__(self):
+        return f'PoissonDistribution(mean={self.mean})'
+
+    def __str__(self):
+        return f'Poisson distribution (mean: {self.mean})'
