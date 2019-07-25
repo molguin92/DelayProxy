@@ -15,7 +15,6 @@
 import multiprocessing
 import signal
 import socket
-import time
 from typing import Optional
 
 from logzero import logger
@@ -52,7 +51,8 @@ class SimplexRelay(multiprocessing.Process):
         while not self.shutdown_signal.is_set():
             try:
                 data = self.conn_a.recv(self.chunk_size)
-                time.sleep(self.delay_dist.sample())
+                self.shutdown_signal.wait(timeout=self.delay_dist.sample())
+                # time.sleep(self.delay_dist.sample())
                 self.conn_b.sendall(data)
             except socket.error as e:
                 logger.warning(e)
@@ -135,6 +135,8 @@ class DuplexRelay(multiprocessing.Process):
 
         relay_1.join()
         relay_2.join()
+
+        logger.debug('All simplex relays shut down.')
 
         self.shutdown_signal.clear()
 
