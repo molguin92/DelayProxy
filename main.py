@@ -27,7 +27,7 @@ import logzero
 import toml
 
 from distributions import Distribution
-from proxy import DelayProxy
+from relay import DuplexRelay
 
 avail_distributions = {cls.__name__.upper(): cls for cls in
                        Distribution.__subclasses__()}
@@ -103,7 +103,7 @@ def cli(verbose):
 def proxy(ctx, chunk_size, bind_addr, connect_addr):
     lhost, lport = bind_addr
     chost, cport = connect_addr
-    ctx.obj = DelayProxy(
+    ctx.obj = DuplexRelay(
         listen_host=lhost,
         listen_port=lport,
         connect_host=chost,
@@ -114,18 +114,17 @@ def proxy(ctx, chunk_size, bind_addr, connect_addr):
 
 @click.pass_context
 def single_run_proxy_callback(ctx, dist_class, *args, **kwargs):
-    ctx.ensure_object(DelayProxy)
+    ctx.ensure_object(DuplexRelay)
     relay = ctx.obj
     relay.set_distribution(dist_class(*args, **kwargs))
 
     def __sig_handler(*args, **kwargs):
         relay.stop()
-        exit(0)
 
     signal.signal(signal.SIGINT, __sig_handler)
-    relay.start()
+    relay.start()  # waits until end
 
-    Event().wait()  # wait forever
+    relay.join()
 
 
 # dynamically add distributions as commands
@@ -155,7 +154,7 @@ for dist_name, dist in avail_distributions.items():
 @cli.command()
 @click.argument('config', type=TOMLConfig())
 def from_file(config: Dict):
-    proxies: List[DelayProxy] = list()
+    proxies: List[DuplexRelay] = list()
     for p_config in config['proxies']:
         baddr, bport = parse_IP_address(p_config['bind_addr'])
         caddr, cport = parse_IP_address(p_config['connect_addr'])
@@ -166,7 +165,7 @@ def from_file(config: Dict):
 
         dist = avail_distributions[dist_name](**dist_params)
 
-        proxies.append(DelayProxy(
+        proxies.append(DuplexRelay(
             listen_host=baddr, listen_port=bport,
             connect_host=caddr, connect_port=cport,
             chunk_size=chunk_size,
