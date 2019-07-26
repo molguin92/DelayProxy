@@ -19,6 +19,7 @@ from typing import Optional
 
 from logzero import logger
 
+from defaults import RelayDefaults
 from distributions import Distribution
 
 
@@ -31,7 +32,7 @@ class SimplexRelay(multiprocessing.Process):
                  conn_a: socket.SocketType,
                  conn_b: socket.SocketType,
                  delay_dist: Distribution,
-                 chunk_size: int = 512):
+                 chunk_size: int = RelayDefaults.CHUNK_SIZE):
         super().__init__(daemon=True)
         self.conn_a = conn_a
         self.conn_b = conn_b
@@ -75,7 +76,7 @@ class DuplexRelay(multiprocessing.Process):
                  connect_host: str,
                  connect_port: int,
                  delay_dist: Optional[Distribution] = None,
-                 chunk_size: int = 512):
+                 chunk_size: int = RelayDefaults.CHUNK_SIZE):
         super().__init__()
         logger.info(f'Setting up relay from '
                     f'{listen_host}:{listen_port} to '

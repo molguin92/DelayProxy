@@ -26,6 +26,7 @@ import click
 import logzero
 import toml
 
+from defaults import RelayDefaults
 from distributions import Distribution
 from relay import DuplexRelay
 
@@ -104,8 +105,8 @@ def cli():
 
 
 @cli.group(help='Start a single proxy from the CLI.')
-@click.option('-c', '--chunk_size', type=int, default=4096, required=False,
-              show_default=True,
+@click.option('-c', '--chunk_size', type=int, default=RelayDefaults.CHUNK_SIZE,
+              required=False, show_default=True,
               help='Read/write chunk size for the TCP proxy in bytes.')
 @click.argument('bind_addr', type=INetAddress(INetAddress.TYPE.FROM))
 @click.argument('connect_addr', type=INetAddress(INetAddress.TYPE.TO))

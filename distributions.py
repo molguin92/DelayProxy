@@ -16,6 +16,8 @@ from functools import partial
 
 import numpy as np
 
+from defaults import DistributionDefaults
+
 
 class Distribution:
     """
@@ -43,7 +45,8 @@ class ConstantDistribution(Distribution):
 
 class GaussianDistribution(Distribution):
     def __init__(self, mean: float, std_dev: float,
-                 strictly_positive: bool = True):
+                 strictly_positive: bool =
+                 DistributionDefaults.GAUSSIAN_STRICTLY_POSITIVE):
         super().__init__()
         self.mean = mean
         self.std_dev = std_dev
