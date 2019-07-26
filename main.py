@@ -33,6 +33,23 @@ avail_distributions = {cls.__name__.upper(): cls for cls in
                        Distribution.__subclasses__()}
 
 
+def add_verbosity_option(fn):
+    def __set_verbosity(ctx, param, value):
+        if value == 1:
+            logzero.setup_default_logger(level=logging.WARNING)
+        elif value == 2:
+            logzero.setup_default_logger(level=logging.INFO)
+        elif value >= 3:
+            logzero.setup_default_logger(level=logging.DEBUG)
+        else:
+            logzero.setup_default_logger(level=logging.ERROR)
+
+    fn = click.option('-v', help='Set verbosity',
+                      count=True, expose_value=False, is_eager=True,
+                      callback=__set_verbosity, type=int, default=0)(fn)
+    return fn
+
+
 def parse_IP_address(address: str) -> Tuple[str, int]:
     try:
         [ip, port] = address.split(':')
@@ -79,18 +96,11 @@ class INetAddress(click.ParamType):
 
 
 @click.group()
-@click.option('-v', '--verbose',
-              count=True, type=int, default=0,
-              help='Logging verbosity.')
-def cli(verbose):
-    if verbose == 1:
-        logzero.setup_default_logger(level=logging.WARNING)
-    elif verbose == 2:
-        logzero.setup_default_logger(level=logging.INFO)
-    elif verbose >= 3:
-        logzero.setup_default_logger(level=logging.DEBUG)
-    else:
-        logzero.setup_default_logger(level=logging.ERROR)
+@add_verbosity_option
+def cli():
+    from logzero import logger
+    logger.info('Hello world.')
+    pass
 
 
 @cli.group(help='Start a single proxy from the CLI.')
@@ -99,6 +109,7 @@ def cli(verbose):
               help='Read/write chunk size for the TCP proxy in bytes.')
 @click.argument('bind_addr', type=INetAddress(INetAddress.TYPE.FROM))
 @click.argument('connect_addr', type=INetAddress(INetAddress.TYPE.TO))
+@add_verbosity_option
 @click.pass_context
 def proxy(ctx, chunk_size, bind_addr, connect_addr):
     lhost, lport = bind_addr
@@ -148,10 +159,11 @@ for dist_name, dist in avail_distributions.items():
                         callback=partial(single_run_proxy_callback,
                                          dist_class=dist),
                         params=args)
-    proxy.add_command(cmd)
+    proxy.add_command(add_verbosity_option(cmd))
 
 
 @cli.command()
+@add_verbosity_option
 @click.argument('config', type=TOMLConfig())
 def from_file(config: Dict):
     proxies: List[DuplexRelay] = list()
