@@ -34,20 +34,40 @@ avail_distributions = {cls.__name__.upper(): cls for cls in
                        Distribution.__subclasses__()}
 
 
+class State:
+    def __init__(self):
+        self.verbosity = -1
+        self.relay = None
+
+    def set_relay(self, relay: DuplexRelay):
+        self.relay = relay
+
+    def set_verbosity(self, value):
+        if value >= self.verbosity:
+            self.verbosity = value
+            if value == 1:
+                logzero.setup_default_logger(level=logging.WARNING)
+            elif value == 2:
+                logzero.setup_default_logger(level=logging.INFO)
+            elif value >= 3:
+                logzero.setup_default_logger(level=logging.DEBUG)
+            else:
+                logzero.setup_default_logger(level=logging.ERROR)
+
+
+pass_state = click.make_pass_decorator(State, ensure=True)
+
+
 def add_verbosity_option(fn):
     def __set_verbosity(ctx, param, value):
-        if value == 1:
-            logzero.setup_default_logger(level=logging.WARNING)
-        elif value == 2:
-            logzero.setup_default_logger(level=logging.INFO)
-        elif value >= 3:
-            logzero.setup_default_logger(level=logging.DEBUG)
-        else:
-            logzero.setup_default_logger(level=logging.ERROR)
+        state = ctx.ensure_object(State)
+        state.set_verbosity(value)
+        return state
 
     fn = click.option('-v', help='Set verbosity',
-                      count=True, expose_value=False, is_eager=True,
-                      callback=__set_verbosity, type=int, default=0)(fn)
+                      count=True, expose_value=False,
+                      callback=__set_verbosity,
+                      type=int, default=0)(fn)
     return fn
 
 
@@ -97,46 +117,43 @@ class INetAddress(click.ParamType):
 
 
 @click.group()
+@pass_state
 @add_verbosity_option
-def cli():
-    from logzero import logger
-    logger.info('Hello world.')
+def cli(_):
     pass
 
 
 @cli.group(help='Start a single proxy from the CLI.')
+@pass_state
 @click.option('-c', '--chunk_size', type=int, default=RelayDefaults.CHUNK_SIZE,
               required=False, show_default=True,
               help='Read/write chunk size for the TCP proxy in bytes.')
 @click.argument('bind_addr', type=INetAddress(INetAddress.TYPE.FROM))
 @click.argument('connect_addr', type=INetAddress(INetAddress.TYPE.TO))
 @add_verbosity_option
-@click.pass_context
-def proxy(ctx, chunk_size, bind_addr, connect_addr):
+def proxy(state, chunk_size, bind_addr, connect_addr):
     lhost, lport = bind_addr
     chost, cport = connect_addr
-    ctx.obj = DuplexRelay(
+    state.set_relay(DuplexRelay(
         listen_host=lhost,
         listen_port=lport,
         connect_host=chost,
         connect_port=cport,
         chunk_size=chunk_size
-    )
+    ))
 
 
-@click.pass_context
-def single_run_proxy_callback(ctx, dist_class, *args, **kwargs):
-    ctx.ensure_object(DuplexRelay)
-    relay = ctx.obj
-    relay.set_distribution(dist_class(*args, **kwargs))
+@pass_state
+def single_run_proxy_callback(state, dist_class, *args, **kwargs):
+    state.relay.set_distribution(dist_class(*args, **kwargs))
 
     def __sig_handler(*args, **kwargs):
-        relay.stop()
+        state.relay.stop()
 
     signal.signal(signal.SIGINT, __sig_handler)
-    relay.start()  # waits until end
+    state.relay.start()  # waits until end
 
-    relay.join()
+    state.relay.join()
 
 
 # dynamically add distributions as commands
@@ -164,9 +181,10 @@ for dist_name, dist in avail_distributions.items():
 
 
 @cli.command()
+@pass_state
 @add_verbosity_option
 @click.argument('config', type=TOMLConfig())
-def from_file(config: Dict):
+def from_file(_, config: Dict):
     proxies: List[DuplexRelay] = list()
     for p_config in config['proxies']:
         baddr, bport = parse_IP_address(p_config['bind_addr'])
