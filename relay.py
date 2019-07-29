@@ -52,6 +52,8 @@ class SimplexRelay(threading.Thread):
                 self.shutdown_signal.wait(timeout=self.delay_dist.sample())
                 # time.sleep(self.delay_dist.sample())
                 self.conn_b.sendall(data)
+            except socket.timeout:
+                pass
             except socket.error as e:
                 logger.warning(e)
                 break
@@ -100,39 +102,50 @@ class DuplexRelay(threading.Thread):
             logger.info('Listening on {}:{}'.format(*self.listen_addr))
             l_sock.bind(self.listen_addr)
             l_sock.listen(0)
+            l_sock.settimeout(0.1)
 
-            with l_sock.accept()[0] as conn_a:
-                addr_from = conn_a.getpeername()
-                logger.info('Got connection from {}:{}'.format(*addr_from))
-                logger.info('Connecting to {}:{}...'.format(*self.connect_addr))
-                with socket.create_connection(self.connect_addr) as conn_b:
-                    logger.info('Connected. Ready to relay between '
-                                '{}:{} and {}:{}'.format(*addr_from,
-                                                         *self.connect_addr))
+            while not self.shutdown_signal.is_set():
+                try:
+                    with l_sock.accept()[0] as conn_a:
+                        addr_from = conn_a.getpeername()
+                        logger.info(
+                            'Got connection from {}:{}'.format(*addr_from))
+                        logger.info(
+                            'Connecting to {}:{}...'.format(*self.connect_addr))
+                        with socket.create_connection(
+                                self.connect_addr) as conn_b:
+                            logger.info('Connected. Ready to relay between '
+                                        '{}:{} and '
+                                        '{}:{}'.format(*addr_from,
+                                                       *self.connect_addr))
 
-                    relay_1 = SimplexRelay(conn_a, conn_b, self.delay_dist,
-                                           self.chunk_size)
-                    relay_2 = SimplexRelay(conn_b, conn_a, self.delay_dist,
-                                           self.chunk_size)
+                            relay_1 = SimplexRelay(conn_a, conn_b,
+                                                   self.delay_dist,
+                                                   self.chunk_size)
+                            relay_2 = SimplexRelay(conn_b, conn_a,
+                                                   self.delay_dist,
+                                                   self.chunk_size)
 
-                    relay_1.start()
-                    relay_2.start()
+                            relay_1.start()
+                            relay_2.start()
 
-                    self.shutdown_signal.wait()
+                            self.shutdown_signal.wait()
 
-                    logger.debug('Shutting down relay.')
+                            logger.debug('Shutting down relay.')
 
-                    relay_1.stop()
-                    relay_2.stop()
+                            relay_1.stop()
+                            relay_2.stop()
 
-                    conn_a.shutdown(socket.SHUT_RDWR)
-                    conn_b.shutdown(socket.SHUT_RDWR)
-                    l_sock.shutdown(socket.SHUT_RDWR)
+                            conn_a.shutdown(socket.SHUT_RDWR)
+                            conn_b.shutdown(socket.SHUT_RDWR)
+                            l_sock.shutdown(socket.SHUT_RDWR)
 
-        relay_1.join()
-        relay_2.join()
+                        relay_1.join()
+                        relay_2.join()
 
-        logger.debug('All simplex relays shut down.')
+                        logger.debug('All simplex relays shut down.')
+                except socket.timeout:
+                    continue
 
         self.shutdown_signal.clear()
 
