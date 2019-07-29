@@ -12,9 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import multiprocessing
-import signal
 import socket
+import threading
 from typing import Optional
 
 from logzero import logger
@@ -27,7 +26,7 @@ def noop(*args, **kwargs):
     pass
 
 
-class SimplexRelay(multiprocessing.Process):
+class SimplexRelay(threading.Thread):
     def __init__(self,
                  conn_a: socket.SocketType,
                  conn_b: socket.SocketType,
@@ -39,12 +38,10 @@ class SimplexRelay(multiprocessing.Process):
         self.delay_dist = delay_dist
         self.chunk_size = chunk_size
 
-        self.shutdown_signal = multiprocessing.Event()
+        self.shutdown_signal = threading.Event()
         self.shutdown_signal.clear()
 
     def run(self) -> None:
-        signal.signal(signal.SIGINT, noop)  # remove signal handlers
-
         from_addr = self.conn_a.getpeername()
         to_addr = self.conn_b.getpeername()
         logger.info('Relaying data from '
@@ -68,7 +65,7 @@ class SimplexRelay(multiprocessing.Process):
         self.shutdown_signal.set()
 
 
-class DuplexRelay(multiprocessing.Process):
+class DuplexRelay(threading.Thread):
 
     def __init__(self,
                  listen_host: str,
@@ -84,7 +81,7 @@ class DuplexRelay(multiprocessing.Process):
 
         self.listen_addr = (listen_host, listen_port)
         self.connect_addr = (connect_host, connect_port)
-        self.shutdown_signal = multiprocessing.Event()
+        self.shutdown_signal = threading.Event()
         self.chunk_size = chunk_size
         self.delay_dist = delay_dist
 
@@ -97,8 +94,6 @@ class DuplexRelay(multiprocessing.Process):
         if not self.delay_dist:
             logger.exception(RuntimeError('No delay distribution set for '
                                           'relay!'))
-
-        signal.signal(signal.SIGINT, noop)  # remove signal handlers
         # connect sockets
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as l_sock:
             l_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

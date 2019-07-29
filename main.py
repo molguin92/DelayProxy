@@ -19,7 +19,7 @@ import logging
 import signal
 from functools import partial
 from inspect import Parameter, signature
-from multiprocessing import Event
+from threading import Event
 from typing import Dict, List, Optional, Tuple
 
 import click
